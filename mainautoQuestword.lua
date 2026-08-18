@@ -16,7 +16,7 @@ local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
 
 -- ใส่ URL raw ของไฟล์นี้บน GitHub — queue_on_teleport ดึงรอบใหม่หลังวาร์ปโลก
-local AUTOQUEST_RAW_URL = "https://gist.githubusercontent.com/armkkk123/93c7a384be75a8da1afd8a020f084bc0/raw/d000844451e387d1497be00fed72eb5f3aa94bd9/main_autoquest.lua"
+local AUTOQUEST_RAW_URL = "https://raw.githubusercontent.com/armkkk123/TEST/refs/heads/main/mainautoQuestword.lua"
 local CHAIN_SAVE_FILE = "RuajadHub/AutoQuestChain.txt"
 
 local function ensureRuajadFolder()
