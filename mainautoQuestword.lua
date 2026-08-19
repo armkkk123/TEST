@@ -47,7 +47,7 @@ local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
 
 -- ใส่ URL raw ของไฟล์นี้บน Gist — ไม่ใส่ commit hash กลางลิงก์ อัป Gist แล้วได้ล่าสุดอัตโนมัติ
-local AUTOQUEST_RAW_URL = "https://gist.githubusercontent.com/armkkk123/7f421620a8f9819207d1eeace542ef2d/raw/main_autoquest.lua"
+local AUTOQUEST_RAW_URL = "https://raw.githubusercontent.com/armkkk123/TEST/refs/heads/main/mainautoQuestword.lua"
 
 local function ensureRuajadFolder()
     pcall(function()
