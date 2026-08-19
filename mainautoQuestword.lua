@@ -1,18 +1,13 @@
 -- [[ 🐲 RUAJAD HUB: WORLD AUTOQUEST (BUG FIX EDITION) ]]
-local RESUME_FILE_BOOT = "RuajadHub/AutoQuestResume.txt"
-local isTeleportReload = false
-pcall(function()
-    if typeof(isfile) == "function" and isfile(RESUME_FILE_BOOT) then
-        isTeleportReload = true
-    end
-end)
+local isTeleportReload = getgenv().RuajadTeleportResume and true or false
+getgenv().RuajadTeleportResume = nil
 if getgenv().RuajadAutoQuestLoaded and not isTeleportReload then
     return
 end
 getgenv().RuajadAutoQuestLoaded = true
 
-warn("⏳ [RUAJAD] waiting 12s before script starts...")
-task.wait(12)
+warn("⏳ [RUAJAD] waiting 9s before script starts...")
+task.wait(9)
 
 local Players = game:GetService("Players")
 local LP = Players.LocalPlayer
@@ -119,47 +114,15 @@ local function keepOverlayOnTop(sg)
     end)
 end
 
-local function suppressHubLayerGuis()
-    local keep = {
-        RobloxGui = true,
-        TopBarApp = true,
-        TopBar = true,
-        PlayerList = true,
-        BackpackGui = true,
-        Chat = true,
-        BubbleChat = true,
-        PurchasePrompt = true,
-        [OVERLAY_GUI_NAME] = true,
-        RUAJAD_Warning = true,
-    }
-    local function zap(root)
-        if not root then return end
-        for _, child in ipairs(root:GetChildren()) do
-            if child:IsA("ScreenGui") and not keep[child.Name] then
-                local n = string.lower(child.Name)
-                local high = false
-                pcall(function()
-                    high = (child.DisplayOrder or 0) >= 40
-                end)
-                if high or string.find(n, "rayfield", 1, true) or string.find(n, "sirius", 1, true) then
-                    child.Enabled = false
-                end
-            end
-        end
-    end
-    pcall(function() zap(game:GetService("CoreGui")) end)
-    pcall(function()
-        if typeof(gethui) == "function" then
-            zap(gethui())
-        end
-    end)
-end
-
-local function hideRayfieldGui()
+local function minimizeRayfieldGui()
     eachGuiRoot(function(root)
         for _, child in ipairs(root:GetChildren()) do
             if isRayfieldGui(child) then
-                child.Enabled = false
+                child.Enabled = true
+                local main = child:FindFirstChild("Main") or child:FindFirstChild("MainFrame")
+                if main then
+                    main.Visible = false
+                end
             end
         end
     end)
@@ -170,29 +133,23 @@ local function showRayfieldGui()
         for _, child in ipairs(root:GetChildren()) do
             if isRayfieldGui(child) then
                 child.Enabled = true
+                local main = child:FindFirstChild("Main") or child:FindFirstChild("MainFrame")
+                if main then
+                    main.Visible = true
+                end
             end
         end
     end)
 end
 _G.RuajadOpenRayfieldGui = showRayfieldGui
 
-local function destroyRayfieldGui()
-    eachGuiRoot(function(root)
-        for _, child in ipairs(root:GetChildren()) do
-            if isRayfieldGui(child) then
-                pcall(function() child:Destroy() end)
-            end
-        end
-    end)
-end
-
-local function watchHideRayfield()
+local function watchMinimizeRayfield()
     local conns = {}
     eachGuiRoot(function(root)
-        hideRayfieldGui()
+        minimizeRayfieldGui()
         table.insert(conns, root.ChildAdded:Connect(function(child)
             if isRayfieldGui(child) then
-                child.Enabled = false
+                task.defer(minimizeRayfieldGui)
             end
         end))
     end)
@@ -227,7 +184,8 @@ local function queueAutoQuestOnTeleport()
     local url = AUTOQUEST_RAW_URL
     local loader = [[
         repeat task.wait() until game:IsLoaded()
-        task.wait(12)
+        getgenv().RuajadTeleportResume = true
+        task.wait(9)
         pcall(function()
             loadstring(game:HttpGet("]] .. url .. [["))()
         end)
@@ -375,8 +333,8 @@ local function createResumeOverlay()
     local box = Instance.new("Frame")
     box.Parent = sg
     box.Name = "Box"
-    box.Size = UDim2.new(0, 280, 0, 62)
-    box.Position = UDim2.new(0.5, -140, 0, 10)
+    box.Size = UDim2.new(0, 220, 0, 62)
+    box.Position = UDim2.new(0.5, -110, 0, 10)
     box.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
     box.BackgroundTransparency = 0.42
     box.BorderSizePixel = 0
@@ -439,78 +397,41 @@ local function createResumeOverlay()
     return {
         overlay = sg,
         status = status,
-        openGuiBtn = makeBtn("OpenGUI", "Open GUI", Color3.fromRGB(50, 100, 185), 54),
-        cancel = makeBtn("Cancel", "Cancel", Color3.fromRGB(170, 50, 50), 154),
+        openGuiBtn = makeBtn("OpenGUI", "Open GUI", Color3.fromRGB(50, 100, 185), 69),
     }
 end
 
-local function runResumeOverlay(alreadyConsumed)
-    if not alreadyConsumed and not consumeAutoResume() then return end
+local function setupResumeOverlayOpenGui(ui)
+    if not ui or not ui.openGuiBtn then return end
+    ui.openGuiBtn.Visible = true
+    ui.openGuiBtn.MouseButton1Click:Connect(function()
+        if _G.RuajadStopRayfieldWatch then
+            pcall(_G.RuajadStopRayfieldWatch)
+            _G.RuajadStopRayfieldWatch = nil
+        end
+        showRayfieldGui()
+        if ui.overlay then
+            pcall(function() ui.overlay:Destroy() end)
+        end
+    end)
+end
 
-    destroyRayfieldGui()
-    local stopWatch = watchHideRayfield()
-
+local function runResumeOverlay()
     local ui = createResumeOverlay()
     ui.status.Text = "Waiting for character + dragon..."
-    ui.openGuiBtn.Visible = true
-    ui.cancel.Visible = true
-    local choice = nil
-    local conns = {}
-
-    local function cleanup()
-        for _, c in ipairs(conns) do
-            pcall(function() c:Disconnect() end)
-        end
-        conns = {}
-    end
-
-    local function finish(result)
-        if choice ~= nil then return end
-        choice = result
-        cleanup()
-    end
-
-    pcall(function()
-        table.insert(conns, ui.cancel.MouseButton1Click:Connect(function()
-            _G.AutoQuestChain = false
-            _G.AutoQuestChainWorld = false
-            _G.AutoQuestChainPaused = false
-            setChainPersist(false)
-            for _, flag in ipairs({"AutoQuestOrigins","AutoQuestGrassland","AutoQuestJungle","AutoQuestVolcano","AutoQuestTundra","AutoQuestOcean","AutoQuestDesert","AutoQuestFantasy","AutoQuestShinrin","AutoQuestPrehistoric","AutoQuestWasteland"}) do
-                _G[flag] = false
-            end
-            finish(false)
-        end))
-        table.insert(conns, ui.openGuiBtn.MouseButton1Click:Connect(function()
-            finish("gui")
-        end))
-    end)
+    setupResumeOverlayOpenGui(ui)
 
     waitUntilPlayerAndDragonInWorld(function(ready, why)
         keepOverlayOnTop(ui.overlay)
-        hideRayfieldGui()
         if ready then
-            ui.status.Text = "Ready — starting auto quest..."
+            ui.status.Text = "Auto quest running..."
         else
             ui.status.Text = "Waiting " .. tostring(why) .. "..."
         end
-    end, function()
-        return choice ~= nil
     end)
 
-    if choice ~= nil then
-        if choice ~= "continue" then
-            stopWatch()
-        end
-        return choice, ui.overlay
-    end
-
-    ui.status.Text = "Starting auto quest..."
-    task.wait(0.4)
-    finish("continue")
-    _G.RuajadStopRayfieldWatch = stopWatch
-
-    return choice, ui.overlay
+    ui.status.Text = "Auto quest running..."
+    return ui.overlay
 end
 
 -- [[ 📺 CENTER WARNING UI ]]
@@ -1945,69 +1866,39 @@ end
 -- ============================================================
 -- [[ 🎮 UI ]]
 -- ============================================================
-local pendingAutoResume = consumeAutoResume()
-local overlayResult = nil
+local pendingAutoResume = isTeleportReload and (consumeAutoResume() or isChainPersistOn())
 local overlayGui = nil
-local shouldHideRayfield = false
 
-if pendingAutoResume then
-    warn("🌐 [Overlay] auto-warp resume — showing overlay")
-    overlayResult, overlayGui = runResumeOverlay(true)
-    if overlayResult == "continue" then
-        shouldHideRayfield = true
-    elseif overlayResult == false or overlayResult == "gui" then
-        pendingAutoResume = false
-        if overlayGui then
-            pcall(function() overlayGui:Destroy() end)
-            overlayGui = nil
+if not isTeleportReload then
+    pcall(function()
+        if typeof(isfile) == "function" and typeof(delfile) == "function" and isfile(RESUME_FILE) then
+            delfile(RESUME_FILE)
         end
-    end
-else
-    waitUntilPlayerAndDragonInWorld()
+    end)
 end
 
--- โหลด Rayfield หลังกดปุ่ม Overlay เท่านั้น — Overlay ยังค้างบนสุดกันหน้า loading ของ Rayfield
-local rayHideConn = nil
-if shouldHideRayfield then
-    hideRayfieldGui()
-    suppressHubLayerGuis()
-    rayHideConn = watchHideRayfield()
-    if overlayGui then
-        keepOverlayOnTop(overlayGui)
-    end
+if pendingAutoResume then
+    warn("🌐 [RUAJAD] auto-warp resume — hide Rayfield, continue quest")
+    overlayGui = runResumeOverlay()
+else
+    waitUntilPlayerAndDragonInWorld()
 end
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 local Window = Rayfield:CreateWindow({
     Name = "RUAJAD HUB",
-    LoadingTitle = shouldHideRayfield and " " or "Bug Fix Edition",
-    LoadingSubtitle = shouldHideRayfield and " " or "Portal-Safe Navigation",
+    LoadingTitle = pendingAutoResume and " " or "Bug Fix Edition",
+    LoadingSubtitle = pendingAutoResume and " " or "Portal-Safe Navigation",
     ConfigurationSaving = { Enabled = false },
     KeySystem = false
 })
 
-if overlayGui then
-    keepOverlayOnTop(overlayGui)
-end
-if rayHideConn then
-    hideRayfieldGui()
-    suppressHubLayerGuis()
-    task.wait(0.15)
-    hideRayfieldGui()
-    rayHideConn()
-    rayHideConn = nil
-end
-if _G.RuajadStopRayfieldWatch then
-    pcall(_G.RuajadStopRayfieldWatch)
-    _G.RuajadStopRayfieldWatch = nil
-end
-if shouldHideRayfield then
-    hideRayfieldGui()
-    suppressHubLayerGuis()
-end
-if overlayGui then
-    pcall(function() overlayGui:Destroy() end)
-    overlayGui = nil
+if pendingAutoResume then
+    minimizeRayfieldGui()
+    _G.RuajadStopRayfieldWatch = watchMinimizeRayfield()
+    if overlayGui then
+        keepOverlayOnTop(overlayGui)
+    end
 end
 
 local MainTab = Window:CreateTab("Quest", 4483362458)
@@ -3500,14 +3391,17 @@ local AdvanceChainToggleObj = AdvanceTab:CreateToggle({
     end,
 })
 
--- วาร์ปอัตโนมัติสำเร็จ → เปิด Chain ต่อ (ไม่ใช่กด execute มือ)
-if pendingAutoResume and overlayResult == "continue" then
+-- วาร์ปอัตโนมัติสำเร็จ → เริ่ม Chain ทันที (ซ่อน Rayfield เหลือปุ่มลอย)
+if pendingAutoResume then
+    minimizeRayfieldGui()
+    _G.AutoQuestChain = true
+    setChainPersist(true)
+    queueAutoQuestOnTeleport()
+    _G.AutoQuestChainPaused = false
     task.spawn(function()
-        pcall(function()
-            if AdvanceChainToggleObj then
-                AdvanceChainToggleObj:Set(true)
-            end
-        end)
+        if type(_G.runAdvanceQuestChain) == "function" then
+            _G.runAdvanceQuestChain()
+        end
     end)
 end
 
@@ -3559,7 +3453,9 @@ task.spawn(function()
     end
 end)
 
-Rayfield:Notify({Title = "RUAJAD HUB", Content = "Loot-Friendly Ghost Mode & Auto-Loot Active!", Duration = 5})
+if not pendingAutoResume then
+    Rayfield:Notify({Title = "RUAJAD HUB", Content = "Loot-Friendly Ghost Mode & Auto-Loot Active!", Duration = 5})
+end
 
 -- ============================================================
 -- [[ 💰 AUTO-LOOT SYSTEM: ดูดของออโต้ทันทีที่ดรอป ]]
