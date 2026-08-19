@@ -1,42 +1,18 @@
 -- [[ 🐲 RUAJAD HUB: WORLD AUTOQUEST (BUG FIX EDITION) ]]
-local CHAIN_SAVE_FILE = "RuajadHub/AutoQuestChain.txt"
-local RESUME_FILE = "RuajadHub/AutoQuestResume.txt"
-
-local function ruajadDelFile(path)
-    pcall(function()
-        if typeof(isfile) == "function" and typeof(delfile) == "function" and isfile(path) then
-            delfile(path)
-        end
-    end)
-end
-
-local function clearAllPersistFiles()
-    ruajadDelFile(RESUME_FILE)
-    ruajadDelFile(CHAIN_SAVE_FILE)
-end
-
--- มีไฟล์ resume หรือ flag จากคิววาป = รันต่อแล้วฟาร์ม
-local resumeFileOn = false
+local RESUME_FILE_BOOT = "RuajadHub/AutoQuestResume.txt"
+local isTeleportReload = false
 pcall(function()
-    if typeof(isfile) == "function" and isfile(RESUME_FILE) then
-        resumeFileOn = true
+    if typeof(isfile) == "function" and isfile(RESUME_FILE_BOOT) then
+        isTeleportReload = true
     end
 end)
-local isTeleportReload = getgenv().RuajadTeleportResume and true or resumeFileOn
-getgenv().RuajadTeleportResume = nil
-
-if not isTeleportReload then
-    clearAllPersistFiles()
-end
 if getgenv().RuajadAutoQuestLoaded and not isTeleportReload then
     return
 end
 getgenv().RuajadAutoQuestLoaded = true
 
-if not isTeleportReload then
-    warn("⏳ [RUAJAD] waiting 9s before script starts...")
-    task.wait(9)
-end
+warn("⏳ [RUAJAD] waiting 12s before script starts...")
+task.wait(12)
 
 local Players = game:GetService("Players")
 local LP = Players.LocalPlayer
@@ -47,7 +23,8 @@ local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
 
 -- ใส่ URL raw ของไฟล์นี้บน Gist — ไม่ใส่ commit hash กลางลิงก์ อัป Gist แล้วได้ล่าสุดอัตโนมัติ
-local AUTOQUEST_RAW_URL = "https://raw.githubusercontent.com/armkkk123/TEST/refs/heads/main/mainautoQuestword.lua"
+local AUTOQUEST_RAW_URL = "https://gist.githubusercontent.com/armkkk123/7f421620a8f9819207d1eeace542ef2d/raw/main_autoquest.lua"
+local CHAIN_SAVE_FILE = "RuajadHub/AutoQuestChain.txt"
 
 local function ensureRuajadFolder()
     pcall(function()
@@ -66,8 +43,10 @@ local function setChainPersist(on)
             if typeof(writefile) == "function" then
                 writefile(CHAIN_SAVE_FILE, "1")
             end
-        else
-            ruajadDelFile(CHAIN_SAVE_FILE)
+        elseif typeof(isfile) == "function" and typeof(delfile) == "function" then
+            if isfile(CHAIN_SAVE_FILE) then
+                delfile(CHAIN_SAVE_FILE)
+            end
         end
     end)
 end
@@ -82,6 +61,8 @@ local function isChainPersistOn()
     return on
 end
 
+local RESUME_FILE = "RuajadHub/AutoQuestResume.txt"
+
 local function markAutoResume()
     ensureRuajadFolder()
     pcall(function()
@@ -92,65 +73,149 @@ local function markAutoResume()
 end
 
 local function consumeAutoResume()
-    local had = false
+    local on = false
     pcall(function()
         if typeof(isfile) == "function" and isfile(RESUME_FILE) then
-            had = true
+            on = true
+            if typeof(delfile) == "function" then
+                delfile(RESUME_FILE)
+            end
         end
     end)
-    ruajadDelFile(RESUME_FILE)
-    return had
+    return on
 end
 
-local function clearStaleResumeFile()
-    clearAllPersistFiles()
-end
-
-local Library
-local AdvanceChainToggleObj = nil
-
-local QUEST_FLAG_KEYS = {
-    "AutoQuestOrigins", "AutoQuestGrassland", "AutoQuestJungle", "AutoQuestVolcano",
-    "AutoQuestTundra", "AutoQuestOcean", "AutoQuestDesert", "AutoQuestFantasy",
-    "AutoQuestShinrin", "AutoQuestPrehistoric", "AutoQuestWasteland",
-}
-
-local function hubNotify(title, content, duration)
+local function eachGuiRoot(fn)
     pcall(function()
-        if Library and Library.Notify then
-            Library:Notify({ Title = title, Content = content, Duration = duration or 3 })
-        end
+        local pg = LP:FindFirstChild("PlayerGui")
+        if pg then fn(pg) end
     end)
-end
-
-local function setToggleValue(toggle, on)
-    if not toggle then return end
-    pcall(function() toggle.Set(on) end)
-end
-
-local function minimizeHubToFloatBtn()
     pcall(function()
-        if Library and Library.MainFrame then
-            Library.MainFrame.Visible = false
-        end
-        if Library and Library.OpenBtn then
-            Library.OpenBtn.Visible = true
-        end
-        if Library and Library.ScreenGui then
-            Library.ScreenGui.Enabled = true
+        fn(game:GetService("CoreGui"))
+    end)
+    pcall(function()
+        if typeof(gethui) == "function" then
+            fn(gethui())
         end
     end)
 end
 
-_G.RuajadCancelChain = function()
-    _G.AutoQuestChain = false
-    _G.AutoQuestChainWorld = false
-    setChainPersist(false)
-    clearStaleResumeFile()
-    for _, flag in ipairs(QUEST_FLAG_KEYS) do
-        _G[flag] = false
+local function isRayfieldGui(inst)
+    if not (inst and inst:IsA("ScreenGui")) then return false end
+    local n = string.lower(inst.Name)
+    if string.find(n, "rayfield", 1, true) then return true end
+    if string.find(n, "sirius", 1, true) then return true end
+    return false
+end
+
+local OVERLAY_GUI_NAME = "RUAJAD_RESUME_OVERLAY"
+
+local function keepOverlayOnTop(sg)
+    if not (sg and sg.Parent) then return end
+    pcall(function()
+        sg.Enabled = true
+        sg.DisplayOrder = 2147483647
+        sg.IgnoreGuiInset = true
+    end)
+end
+
+local function suppressHubLayerGuis()
+    local keep = {
+        RobloxGui = true,
+        TopBarApp = true,
+        TopBar = true,
+        PlayerList = true,
+        BackpackGui = true,
+        Chat = true,
+        BubbleChat = true,
+        PurchasePrompt = true,
+        [OVERLAY_GUI_NAME] = true,
+        RUAJAD_Warning = true,
+    }
+    local function zap(root)
+        if not root then return end
+        for _, child in ipairs(root:GetChildren()) do
+            if child:IsA("ScreenGui") and not keep[child.Name] then
+                local n = string.lower(child.Name)
+                local high = false
+                pcall(function()
+                    high = (child.DisplayOrder or 0) >= 40
+                end)
+                if high or string.find(n, "rayfield", 1, true) or string.find(n, "sirius", 1, true) then
+                    child.Enabled = false
+                end
+            end
+        end
     end
-    setPhysics(false)
+    pcall(function() zap(game:GetService("CoreGui")) end)
+    pcall(function()
+        if typeof(gethui) == "function" then
+            zap(gethui())
+        end
+    end)
+end
+
+local function hideRayfieldGui()
+    eachGuiRoot(function(root)
+        for _, child in ipairs(root:GetChildren()) do
+            if isRayfieldGui(child) then
+                child.Enabled = false
+            end
+        end
+    end)
+end
+
+local function showRayfieldGui()
+    eachGuiRoot(function(root)
+        for _, child in ipairs(root:GetChildren()) do
+            if isRayfieldGui(child) then
+                child.Enabled = true
+            end
+        end
+    end)
+end
+_G.RuajadOpenRayfieldGui = showRayfieldGui
+
+local function destroyRayfieldGui()
+    eachGuiRoot(function(root)
+        for _, child in ipairs(root:GetChildren()) do
+            if isRayfieldGui(child) then
+                pcall(function() child:Destroy() end)
+            end
+        end
+    end)
+end
+
+local function watchHideRayfield()
+    local conns = {}
+    eachGuiRoot(function(root)
+        hideRayfieldGui()
+        table.insert(conns, root.ChildAdded:Connect(function(child)
+            if isRayfieldGui(child) then
+                child.Enabled = false
+            end
+        end))
+    end)
+    return function()
+        for _, c in ipairs(conns) do
+            pcall(function() c:Disconnect() end)
+        end
+    end
+end
+
+local function getOverlayParent()
+    local parent
+    pcall(function()
+        if typeof(gethui) == "function" then
+            parent = gethui()
+        end
+    end)
+    if parent then return parent end
+    local ok, cg = pcall(function()
+        return game:GetService("CoreGui")
+    end)
+    if ok and cg then return cg end
+    return LP:WaitForChild("PlayerGui")
 end
 
 local function queueAutoQuestOnTeleport()
@@ -162,8 +227,7 @@ local function queueAutoQuestOnTeleport()
     local url = AUTOQUEST_RAW_URL
     local loader = [[
         repeat task.wait() until game:IsLoaded()
-        task.wait(9)
-        getgenv().RuajadTeleportResume = true
+        task.wait(12)
         pcall(function()
             loadstring(game:HttpGet("]] .. url .. [["))()
         end)
@@ -299,6 +363,155 @@ local function waitUntilWorldAndCharacterReady()
     return waitUntilPlayerAndDragonInWorld()
 end
 
+local function createResumeOverlay()
+    local sg = Instance.new("ScreenGui")
+    sg.Name = OVERLAY_GUI_NAME
+    sg.Parent = LP:WaitForChild("PlayerGui")
+    sg.ResetOnSpawn = false
+    sg.DisplayOrder = 2147483647
+    sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    sg.IgnoreGuiInset = true
+
+    local box = Instance.new("Frame")
+    box.Parent = sg
+    box.Name = "Box"
+    box.Size = UDim2.new(0, 280, 0, 62)
+    box.Position = UDim2.new(0.5, -140, 0, 10)
+    box.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
+    box.BackgroundTransparency = 0.42
+    box.BorderSizePixel = 0
+    box.ZIndex = 2
+
+    local corner = Instance.new("UICorner")
+    corner.Parent = box
+    corner.CornerRadius = UDim.new(0, 8)
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Parent = box
+    stroke.Color = Color3.fromRGB(255, 255, 255)
+    stroke.Transparency = 0.82
+    stroke.Thickness = 1
+
+    local title = Instance.new("TextLabel")
+    title.Parent = box
+    title.Name = "Title"
+    title.Size = UDim2.new(1, -12, 0, 18)
+    title.Position = UDim2.new(0, 6, 0, 4)
+    title.BackgroundTransparency = 1
+    title.Text = "RUAJAD  ·  Auto Quest"
+    title.TextColor3 = Color3.fromRGB(235, 235, 240)
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 12
+    title.ZIndex = 3
+
+    local status = Instance.new("TextLabel")
+    status.Parent = box
+    status.Name = "Status"
+    status.Size = UDim2.new(1, -12, 0, 16)
+    status.Position = UDim2.new(0, 6, 0, 22)
+    status.BackgroundTransparency = 1
+    status.Text = "Loading..."
+    status.TextColor3 = Color3.fromRGB(190, 190, 200)
+    status.Font = Enum.Font.Gotham
+    status.TextSize = 11
+    status.ZIndex = 3
+
+    local function makeBtn(name, text, color, x)
+        local btn = Instance.new("TextButton")
+        btn.Parent = box
+        btn.Name = name
+        btn.Size = UDim2.new(0, 82, 0, 22)
+        btn.Position = UDim2.new(0, x, 1, -28)
+        btn.BackgroundColor3 = color
+        btn.BackgroundTransparency = 0.28
+        btn.Text = text
+        btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        btn.Font = Enum.Font.GothamBold
+        btn.TextSize = 11
+        btn.ZIndex = 3
+        btn.Visible = false
+        local c = Instance.new("UICorner")
+        c.Parent = btn
+        c.CornerRadius = UDim.new(0, 6)
+        return btn
+    end
+
+    return {
+        overlay = sg,
+        status = status,
+        openGuiBtn = makeBtn("OpenGUI", "Open GUI", Color3.fromRGB(50, 100, 185), 54),
+        cancel = makeBtn("Cancel", "Cancel", Color3.fromRGB(170, 50, 50), 154),
+    }
+end
+
+local function runResumeOverlay(alreadyConsumed)
+    if not alreadyConsumed and not consumeAutoResume() then return end
+
+    destroyRayfieldGui()
+    local stopWatch = watchHideRayfield()
+
+    local ui = createResumeOverlay()
+    ui.status.Text = "Waiting for character + dragon..."
+    ui.openGuiBtn.Visible = true
+    ui.cancel.Visible = true
+    local choice = nil
+    local conns = {}
+
+    local function cleanup()
+        for _, c in ipairs(conns) do
+            pcall(function() c:Disconnect() end)
+        end
+        conns = {}
+    end
+
+    local function finish(result)
+        if choice ~= nil then return end
+        choice = result
+        cleanup()
+    end
+
+    pcall(function()
+        table.insert(conns, ui.cancel.MouseButton1Click:Connect(function()
+            _G.AutoQuestChain = false
+            _G.AutoQuestChainWorld = false
+            _G.AutoQuestChainPaused = false
+            setChainPersist(false)
+            for _, flag in ipairs({"AutoQuestOrigins","AutoQuestGrassland","AutoQuestJungle","AutoQuestVolcano","AutoQuestTundra","AutoQuestOcean","AutoQuestDesert","AutoQuestFantasy","AutoQuestShinrin","AutoQuestPrehistoric","AutoQuestWasteland"}) do
+                _G[flag] = false
+            end
+            finish(false)
+        end))
+        table.insert(conns, ui.openGuiBtn.MouseButton1Click:Connect(function()
+            finish("gui")
+        end))
+    end)
+
+    waitUntilPlayerAndDragonInWorld(function(ready, why)
+        keepOverlayOnTop(ui.overlay)
+        hideRayfieldGui()
+        if ready then
+            ui.status.Text = "Ready — starting auto quest..."
+        else
+            ui.status.Text = "Waiting " .. tostring(why) .. "..."
+        end
+    end, function()
+        return choice ~= nil
+    end)
+
+    if choice ~= nil then
+        if choice ~= "continue" then
+            stopWatch()
+        end
+        return choice, ui.overlay
+    end
+
+    ui.status.Text = "Starting auto quest..."
+    task.wait(0.4)
+    finish("continue")
+    _G.RuajadStopRayfieldWatch = stopWatch
+
+    return choice, ui.overlay
+end
 
 -- [[ 📺 CENTER WARNING UI ]]
 local ScreenGui = Instance.new("ScreenGui")
@@ -447,7 +660,14 @@ task.spawn(function()
         end
 
         pcall(function()
-            hubNotify("BOSS DEFEATED", "Claim reward then auto-restart after Exit...", 6)
+            if Rayfield then
+                Rayfield:Notify({
+                    Title = "BOSS DEFEATED",
+                    Content = "Claim reward then auto-restart after Exit...",
+                    Duration = 6,
+                    Image = 4483362458
+                })
+            end
         end)
 
         task.spawn(function()
@@ -582,7 +802,7 @@ local function flyTo(targetCF)
         return
     end
 
-    -- Step 1: วาร์ปขึ้นสูง ทันที (ไม่ Tween ขึ้น)
+    -- Step 1: ✅ วาร์ปขึ้นสูง ทันที (ไม่ Tween ขึ้น)
     setPhysics(true)
     local flyY = math.max(root.Position.Y, targetCF.Position.Y) + FLY_HEIGHT_OFFSET
     local highPos = CFrame.new(root.Position.X, flyY, root.Position.Z)
@@ -590,14 +810,14 @@ local function flyTo(targetCF)
     root.AssemblyLinearVelocity = Vector3.new(0,0,0)
     task.wait(0.1)
 
-    -- Step 2: Tween ในอากาศไปเหนือเป้าหมาย
+    -- Step 2: ✅ Tween ในอากาศไปเหนือเป้าหมาย (เหมือนเดิม ไม่เปลี่ยน)
     local aboveTarget = CFrame.new(targetCF.Position.X, flyY, targetCF.Position.Z)
     local horizDist = (Vector3.new(root.Position.X, 0, root.Position.Z) - Vector3.new(targetCF.Position.X, 0, targetCF.Position.Z)).Magnitude
     local tw2 = TweenService:Create(root, TweenInfo.new(horizDist / SPEED, Enum.EasingStyle.Linear), {CFrame = aboveTarget})
     tw2:Play()
     tw2.Completed:Wait()
 
-    -- Step 3: วาร์ปลงหา Target ทันที (ไม่ Tween ลง)
+    -- Step 3: ✅ วาร์ปลงหา Target ทันที (ไม่ Tween ลง)
     setPhysics(false)
     root.CFrame = targetCF
     root.AssemblyLinearVelocity = Vector3.new(0,0,0)
@@ -1521,7 +1741,11 @@ local function runChestSpawnPatrol(flagKey, maxSeconds)
     setPhysics(true)
     warn("🗺️ [Chest Patrol] Cycling Treasure spawn points...")
     pcall(function()
-        hubNotify("Map Patrol", "Visiting all treasure spawn points (loop)...", 3)
+        Rayfield:Notify({
+            Title = "Map Patrol",
+            Content = "Visiting all treasure spawn points (loop)...",
+            Duration = 3,
+        })
     end)
 
     local deadline = os.clock() + (maxSeconds or PATROL_MAX_SECONDS)
@@ -1542,7 +1766,7 @@ local function runChestSpawnPatrol(flagKey, maxSeconds)
                 if live then
                     setPhysics(false)
                     pcall(function()
-            hubNotify("Map Patrol", "New chest detected!", 2)
+                        Rayfield:Notify({ Title = "Map Patrol", Content = "New chest detected!", Duration = 2 })
                     end)
                     return live
                 end
@@ -1555,7 +1779,7 @@ local function runChestSpawnPatrol(flagKey, maxSeconds)
                     if live then
                         setPhysics(false)
                         pcall(function()
-                            hubNotify("Map Patrol", "Chest spawned — opening!", 2)
+                            Rayfield:Notify({ Title = "Map Patrol", Content = "Chest spawned — opening!", Duration = 2 })
                         end)
                         return live
                     end
@@ -1720,25 +1944,73 @@ end
 
 -- ============================================================
 -- [[ 🎮 UI ]]
--- รันมือ → เปิดหน้าต่าง | วาร์ปอัตโนมัติ → ซ่อนหน้าต่าง เหลือแค่ปุ่มลอย
 -- ============================================================
-local pendingAutoResume = isTeleportReload
+local pendingAutoResume = consumeAutoResume()
+local overlayResult = nil
+local overlayGui = nil
+local shouldHideRayfield = false
+
 if pendingAutoResume then
-    consumeAutoResume()
+    warn("🌐 [Overlay] auto-warp resume — showing overlay")
+    overlayResult, overlayGui = runResumeOverlay(true)
+    if overlayResult == "continue" then
+        shouldHideRayfield = true
+    elseif overlayResult == false or overlayResult == "gui" then
+        pendingAutoResume = false
+        if overlayGui then
+            pcall(function() overlayGui:Destroy() end)
+            overlayGui = nil
+        end
+    end
 else
-    clearAllPersistFiles()
+    waitUntilPlayerAndDragonInWorld()
 end
-waitUntilPlayerAndDragonInWorld()
 
-Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/armkkk123/ui-/refs/heads/main/Library.obfuscated.lua"))()
-local Window = Library:CreateWindow({
-    Title = "RUAJAD HUB",
+-- โหลด Rayfield หลังกดปุ่ม Overlay เท่านั้น — Overlay ยังค้างบนสุดกันหน้า loading ของ Rayfield
+local rayHideConn = nil
+if shouldHideRayfield then
+    hideRayfieldGui()
+    suppressHubLayerGuis()
+    rayHideConn = watchHideRayfield()
+    if overlayGui then
+        keepOverlayOnTop(overlayGui)
+    end
+end
+
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+local Window = Rayfield:CreateWindow({
+    Name = "RUAJAD HUB",
+    LoadingTitle = shouldHideRayfield and " " or "Bug Fix Edition",
+    LoadingSubtitle = shouldHideRayfield and " " or "Portal-Safe Navigation",
+    ConfigurationSaving = { Enabled = false },
+    KeySystem = false
 })
-if pendingAutoResume then
-    minimizeHubToFloatBtn()
+
+if overlayGui then
+    keepOverlayOnTop(overlayGui)
+end
+if rayHideConn then
+    hideRayfieldGui()
+    suppressHubLayerGuis()
+    task.wait(0.15)
+    hideRayfieldGui()
+    rayHideConn()
+    rayHideConn = nil
+end
+if _G.RuajadStopRayfieldWatch then
+    pcall(_G.RuajadStopRayfieldWatch)
+    _G.RuajadStopRayfieldWatch = nil
+end
+if shouldHideRayfield then
+    hideRayfieldGui()
+    suppressHubLayerGuis()
+end
+if overlayGui then
+    pcall(function() overlayGui:Destroy() end)
+    overlayGui = nil
 end
 
-local MainTab = Window:CreateTab("Quest")
+local MainTab = Window:CreateTab("Quest", 4483362458)
 _G.AutoQuestOrigins = false
 _G.AutoQuestGrassland = false
 _G.AutoQuestJungle = false
@@ -2535,12 +2807,12 @@ _G.RuajadRestartQuestsAfterBoss = function(activeBefore, chainWasOn)
 
     -- ปิดก่อน แล้วเปิดใหม่ (อย่าปิดกลางไฟต์ — ฟังก์ชันนี้เรียกหลัง Exit เท่านั้น)
     for _, data in ipairs(activeBefore) do
-        pcall(function() setToggleValue(data.t, false) end)
+        pcall(function() data.t:Set(false) end)
         _G[data.f] = false
     end
     if chainWasOn then
         pcall(function()
-            if AdvanceChainToggleObj then setToggleValue(AdvanceChainToggleObj, false) end
+            if AdvanceChainToggleObj then AdvanceChainToggleObj:Set(false) end
         end)
         _G.AutoQuestChain = false
         _G.AutoQuestChainWorld = false
@@ -2550,13 +2822,13 @@ _G.RuajadRestartQuestsAfterBoss = function(activeBefore, chainWasOn)
 
     for _, data in ipairs(activeBefore) do
         warn("♻️ [System] Restart " .. data.n)
-        pcall(function() setToggleValue(data.t, true) end)
+        pcall(function() data.t:Set(true) end)
     end
     if chainWasOn then
         warn("♻️ [System] Restart Advance Chain")
         pcall(function()
             if AdvanceChainToggleObj then
-                setToggleValue(AdvanceChainToggleObj, true)
+                AdvanceChainToggleObj:Set(true)
             elseif type(_G.runAdvanceQuestChain) == "function" then
                 _G.AutoQuestChain = true
                 task.spawn(_G.runAdvanceQuestChain)
@@ -2653,7 +2925,7 @@ do
 
     local function notifyChain(title, content)
         pcall(function()
-            hubNotify(title, content, 4)
+            Rayfield:Notify({ Title = title, Content = content, Duration = 4 })
         end)
     end
 
@@ -2861,7 +3133,6 @@ do
             setChainPersist(false)
         end
         setPhysics(false)
-        _G.RuajadChainSpawned = false
     end
 
     _G.runAdvanceQuestChain = runAdvanceQuestChain
@@ -3080,7 +3351,7 @@ _G.GhostMode = true
 
 MainTab:CreateToggle({
     Name = "👻 Ghost Mode (Entity Bypass)",
-    Default = true,
+    CurrentValue = true,
     Flag = "GhostModeToggle",
     Callback = function(Value)
         _G.GhostMode = Value
@@ -3089,7 +3360,7 @@ MainTab:CreateToggle({
 
 QuestToggles.Origins = MainTab:CreateToggle({
     Name = "🏠 Autoquest Original word",
-    Default = false,
+    CurrentValue = false,
     Flag = "OriginsToggle",
     Callback = function(Value)
         _G.AutoQuestOrigins = Value
@@ -3099,7 +3370,7 @@ QuestToggles.Origins = MainTab:CreateToggle({
 
 QuestToggles.Grassland = MainTab:CreateToggle({
     Name = "🌱 Autoquest Grass land word",
-    Default = false,
+    CurrentValue = false,
     Flag = "GrasslandToggle",
     Callback = function(Value)
         _G.AutoQuestGrassland = Value
@@ -3109,7 +3380,7 @@ QuestToggles.Grassland = MainTab:CreateToggle({
 
 QuestToggles.Jungle = MainTab:CreateToggle({
     Name = "🌴 Autoquest Jungle word",
-    Default = false,
+    CurrentValue = false,
     Flag = "JungleToggle",
     Callback = function(Value)
         _G.AutoQuestJungle = Value
@@ -3119,7 +3390,7 @@ QuestToggles.Jungle = MainTab:CreateToggle({
 
 QuestToggles.Volcano = MainTab:CreateToggle({
     Name = "🌋 Autoquest Volcano word",
-    Default = false,
+    CurrentValue = false,
     Flag = "VolcanoToggle",
     Callback = function(Value)
         _G.AutoQuestVolcano = Value
@@ -3129,7 +3400,7 @@ QuestToggles.Volcano = MainTab:CreateToggle({
 
 QuestToggles.Tundra = MainTab:CreateToggle({
     Name = "❄️ Autoquest Tundra word",
-    Default = false,
+    CurrentValue = false,
     Flag = "TundraToggle",
     Callback = function(Value)
         _G.AutoQuestTundra = Value
@@ -3139,7 +3410,7 @@ QuestToggles.Tundra = MainTab:CreateToggle({
 
 QuestToggles.Ocean = MainTab:CreateToggle({
     Name = "🌊 Autoquest Ocean word",
-    Default = false,
+    CurrentValue = false,
     Flag = "OceanToggle",
     Callback = function(Value)
         _G.AutoQuestOcean = Value
@@ -3149,7 +3420,7 @@ QuestToggles.Ocean = MainTab:CreateToggle({
 
 QuestToggles.Desert = MainTab:CreateToggle({
     Name = "🏜️ Autoquest Desert word",
-    Default = false,
+    CurrentValue = false,
     Flag = "DesertToggle",
     Callback = function(Value)
         _G.AutoQuestDesert = Value
@@ -3159,7 +3430,7 @@ QuestToggles.Desert = MainTab:CreateToggle({
 
 QuestToggles.Fantasy = MainTab:CreateToggle({
     Name = "✨ Autoquest Fantasy word",
-    Default = false,
+    CurrentValue = false,
     Flag = "FantasyToggle",
     Callback = function(Value)
         _G.AutoQuestFantasy = Value
@@ -3169,7 +3440,7 @@ QuestToggles.Fantasy = MainTab:CreateToggle({
 
 QuestToggles.Wasteland = MainTab:CreateToggle({
     Name = "☢️ Autoquest Wasteland word",
-    Default = false,
+    CurrentValue = false,
     Flag = "WastelandToggle",
     Callback = function(Value)
         _G.AutoQuestWasteland = Value
@@ -3179,7 +3450,7 @@ QuestToggles.Wasteland = MainTab:CreateToggle({
 
 QuestToggles.Prehistoric = MainTab:CreateToggle({
     Name = "🦖 Autoquest Prehistoric word",
-    Default = false,
+    CurrentValue = false,
     Flag = "PrehistoricToggle",
     Callback = function(Value)
         _G.AutoQuestPrehistoric = Value
@@ -3189,7 +3460,7 @@ QuestToggles.Prehistoric = MainTab:CreateToggle({
 
 QuestToggles.Shinrin = MainTab:CreateToggle({
     Name = "🌿 Autoquest Shinrin word",
-    Default = false,
+    CurrentValue = false,
     Flag = "ShinrinToggle",
     Callback = function(Value)
         _G.AutoQuestShinrin = Value
@@ -3200,15 +3471,15 @@ QuestToggles.Shinrin = MainTab:CreateToggle({
 -- ============================================================
 -- [[ 🚀 ADVANCE TAB — 1 toggle: Origin → Shinrin ]]
 -- ============================================================
-local AdvanceTab = Window:CreateTab("Advance")
+local AdvanceTab = Window:CreateTab("Advance", 4483362458)
 AdvanceTab:CreateSection("Quest Chain")
 AdvanceTab:CreateParagraph({
     Title = "How it works",
     Content = "One toggle. Scans unlocks, resumes at the furthest unlocked world (e.g. Grassland — skips Origins), then quests and warps forward to Shinrin.",
 })
-AdvanceChainToggleObj = AdvanceTab:CreateToggle({
+local AdvanceChainToggleObj = AdvanceTab:CreateToggle({
     Name = "Auto Quest Chain (Origin → Shinrin)",
-    Default = false,
+    CurrentValue = false,
     Flag = "AdvanceQuestChainToggle",
     Callback = function(Value)
         _G.AutoQuestChain = Value
@@ -3216,68 +3487,34 @@ AdvanceChainToggleObj = AdvanceTab:CreateToggle({
             setChainPersist(true)
             queueAutoQuestOnTeleport()
             _G.AutoQuestChainPaused = false
-            if _G.RuajadChainSpawned then
-                return
-            end
-            _G.RuajadChainSpawned = true
             task.spawn(function()
                 if type(_G.runAdvanceQuestChain) == "function" then
                     _G.runAdvanceQuestChain()
                 end
             end)
         else
-            _G.RuajadChainSpawned = false
             _G.AutoQuestChainPaused = false
             _G.AutoQuestChainWorld = false
             setChainPersist(false)
-            clearStaleResumeFile()
-            for _, flag in ipairs(QUEST_FLAG_KEYS) do
-                _G[flag] = false
-            end
-            setPhysics(false)
         end
     end,
 })
 
-_G.RuajadCancelChain = function()
-    if AdvanceChainToggleObj then
-        setToggleValue(AdvanceChainToggleObj, false)
-    else
-        _G.AutoQuestChain = false
-        _G.AutoQuestChainWorld = false
-        setChainPersist(false)
-        clearStaleResumeFile()
-        for _, flag in ipairs(QUEST_FLAG_KEYS) do
-            _G[flag] = false
-        end
-        setPhysics(false)
-    end
-end
-
--- วาร์ปอัตโนมัติ → ฟาร์มเลย + ซ่อน GUI เหลือปุ่มลอย
-if pendingAutoResume then
-    minimizeHubToFloatBtn()
-    _G.AutoQuestChain = true
-    setChainPersist(true)
-    queueAutoQuestOnTeleport()
-    _G.AutoQuestChainPaused = false
-    _G.RuajadChainSpawned = true
-    pcall(function()
-        if AdvanceChainToggleObj and AdvanceChainToggleObj.Set then
-            AdvanceChainToggleObj.Set(true, false)
-        end
-    end)
+-- วาร์ปอัตโนมัติสำเร็จ → เปิด Chain ต่อ (ไม่ใช่กด execute มือ)
+if pendingAutoResume and overlayResult == "continue" then
     task.spawn(function()
-        if type(_G.runAdvanceQuestChain) == "function" then
-            _G.runAdvanceQuestChain()
-        end
+        pcall(function()
+            if AdvanceChainToggleObj then
+                AdvanceChainToggleObj:Set(true)
+            end
+        end)
     end)
 end
 
 -- ============================================================
 -- [[ 🌍 WORLD TELEPORT SYSTEM (DYNAMIC AUTO-FETCH) ]]
 -- ============================================================
-local TeleportTab = Window:CreateTab("Teleport")
+local TeleportTab = Window:CreateTab("🌍 Teleport", 4483362458)
 TeleportTab:CreateSection("Instant World Teleport")
 
 task.spawn(function()
@@ -3304,21 +3541,25 @@ task.spawn(function()
             Callback = function()
                 local tpRemote = ReplicatedStorage:WaitForChild("Remotes"):FindFirstChild("WorldTeleportRemote")
                 if tpRemote then
-                    hubNotify("Warp Active", "Warping to " .. world.Name .. "...", 3)
+                    Rayfield:Notify({
+                        Title = "Warp Active", 
+                        Content = "กำลังวาร์ปทะลุมิติไป " .. world.Name .. "...", 
+                        Duration = 3
+                    })
                     tpRemote:InvokeServer(world.ID, {})
                 else
-                    hubNotify("Error", "WorldTeleportRemote not found!", 3)
+                    Rayfield:Notify({
+                        Title = "Error", 
+                        Content = "ไม่พบ Remote วาร์ป!", 
+                        Duration = 3
+                    })
                 end
             end,
         })
     end
 end)
 
-if pendingAutoResume then
-    minimizeHubToFloatBtn()
-else
-    hubNotify("RUAJAD HUB", "Loot-Friendly Ghost Mode & Auto-Loot Active!", 5)
-end
+Rayfield:Notify({Title = "RUAJAD HUB", Content = "Loot-Friendly Ghost Mode & Auto-Loot Active!", Duration = 5})
 
 -- ============================================================
 -- [[ 💰 AUTO-LOOT SYSTEM: ดูดของออโต้ทันทีที่ดรอป ]]
